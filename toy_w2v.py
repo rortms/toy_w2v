@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[2]:
 
 
 import numpy as np
@@ -10,7 +10,7 @@ from collections import Counter
 import itertools as itt
 
 
-# In[2]:
+# In[3]:
 
 
 # Infinite data iterator
@@ -44,7 +44,7 @@ def iterData(filename, batch_size, jump_around=False):
         
 
 
-# In[3]:
+# In[4]:
 
 
 # Test infinite iterator
@@ -59,7 +59,7 @@ testIter = iterData(fn, 5)
 print(list( (" ".join(next(testIter)) for k in range(100)) ) )
 
 
-# In[4]:
+# In[5]:
 
 
 ## Initialize file iterator
@@ -68,7 +68,7 @@ from config import settings
 moreData = iterData(settings["data_path"], 1000)
 
 
-# In[5]:
+# In[6]:
 
 
 # Construct vocabulary set
@@ -81,7 +81,7 @@ for k in range(70000):
         
 
 
-# In[6]:
+# In[7]:
 
 
 # Subsampling with word2vec's subsampling function
@@ -103,7 +103,7 @@ words = Counter({ w : int( (count/m)**0.75 )  for w, count in words.most_common(
 print(len(words))
 
 
-# In[7]:
+# In[8]:
 
 
 # Word to id mappings
@@ -111,7 +111,7 @@ word2int = { tup[0] : i for i, tup in enumerate(words.most_common()) }
 int2word = { i : word for word, i in word2int.items() }
 
 
-# In[8]:
+# In[9]:
 
 
 # Skip-gram model: for each word, sample a surrounding word within a fixed window (excluding itself),
@@ -140,24 +140,75 @@ def inputsTargets(word_sequence, radius = 4, repeat_num = 2):
     return words, targets
 
 
-# In[ ]:
+# In[28]:
 
 
 class littleNN(object):
 
     def __init__(self, word_counts, embedding_dim, neg_sample_size):
 
-        #Network parameters
-        self.input2hidden = np.random.uniform(
+        ## Vocabulary
+        self.vocab_size = len(word_counts)
+        self.unigram_table = list(word_counts.elements()) # immitating original w2v
+        
+        ## Network parameters
+        self.embedding_dim = embedding_dim
+        self.neg_sample_size = neg_sample_size
+        # layers
+        self.input2hidden = np.random.uniform( size=(self.vocab_size, embedding_dim ) )
+        self.hidden2output = np.random.uniform( size=(embedding_dim, self.vocab_size) )
+        
+        # sigmoid activation
+        self.sgmd = lambda x: 1 / ( 1 + np.exp(-x))
+        
+    # Softmax
+    def Softmax(self, w):
 
+        # Numerical stability, (avoiding large number overflow)
+        C = max(w)
+
+        expW = np.exp(w-C)
+        return expW / sum(expW)
     
+    # Negative sampling
+    def negSample(self):
+
+        neg_samples = {}
+        for k in range(self.neg_sample_size):
+
+            # Imitating unigram table idea from original w2v, see;
+            # http://mccormickml.com/2017/01/11/word2vec-tutorial-part-2-negative-sampling/
+            neg_word = self.unigram_table[np.random.randint(len(self.unigram_table))]
+            
+            neg_samples[word2int[neg_word]] = 0 # one-hot encoding to 0 
+
+        return neg_samples
+
+    # Forward pass
+    def forwardPass(self, inword_id):
+
+        # Input to hidden is just a lookup (b/c of one hot word encoding)
+        i_2_h = self.input2hidden[inword_id]
+        a = self.sgmd(i_2_h)
+
+        # Hidden to output
+        h_2_o = np.dot(a , self.hidden2output)
+        softmax_ps = self.Softmax(h_2_o)
+
+        return softmax_ps
+
+    # Sampled back-prop
+    def sampledBackProp(self, target_id):
+        pass
+    
+        
 
 
-# In[30]:
+# In[29]:
 
 
 testN = littleNN(words, 300, 5)
-print(testN.forward_pass(word2int['weather']))
+print(testN.forwardPass(word2int['weather']))
 testN.negSample()
 
 
