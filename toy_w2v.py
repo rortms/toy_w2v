@@ -100,15 +100,12 @@ total_words = sum(words.values())
 
 words = Counter({ w : int( (count/m)**0.75 )  for w, count in words.most_common() if np.random.uniform() >= P(count/total_words)})
 
-print(len(words))
-
-
-# In[7]:
-
 
 # Word to id mappings
 word2int = { tup[0] : i for i, tup in enumerate(words.most_common()) }
 int2word = { i : word for word, i in word2int.items() }
+
+print(len(words))
 
 
 # In[8]:
@@ -140,20 +137,20 @@ def inputsTargets(word_sequence, radius = 4, repeat_num = 2):
     return words, targets
 
 
-# In[9]:
+# In[17]:
 
 
 class littleNN(object):
 
-    def __init__(self, word_counts, embedding_dim, neg_sample_size):
+    def __init__(self, word_id_counts, embedding_dim, neg_sample_size, learning_rate = 0.05):
 
         ## Vocabulary
-        self.vocab_size = len(word_counts)
-        self.unigram_table = list(word_counts.elements()) # immitating original w2v
+        self.vocab_size = len(word_id_counts)
+        self.unigram_table = list(word_id_counts.elements()) # immitating original w2v
         
         ## Network parameters
         self.embedding_dim = embedding_dim
-        self.neg_sample_size = neg_sample_size
+        self.neg_sample_size = neg_sample_size        
         
         # layers
         self.w0 = np.random.uniform( size=(self.vocab_size, embedding_dim ) )
@@ -161,6 +158,7 @@ class littleNN(object):
         
         # sigmoid activation
         self.sgmd = lambda x: 1 / ( 1 + np.exp(-x))
+        self.lr = learning_rate
         
     # Softmax
     def Softmax(self, v):
@@ -179,9 +177,9 @@ class littleNN(object):
 
             # Imitating unigram table idea from original w2v, see;
             # http://mccormickml.com/2017/01/11/word2vec-tutorial-part-2-negative-sampling/
-            neg_word = self.unigram_table[np.random.randint(len(self.unigram_table))]
+            neg_word_id = self.unigram_table[np.random.randint(len(self.unigram_table))]
             
-            neg_samples[word2int[neg_word]] = 0 # one-hot encoding to 0 
+            neg_samples[neg_word_id] = 0 # one-hot encoding to 0 
 
         return neg_samples
 
@@ -235,26 +233,97 @@ class littleNN(object):
 
         ## Input to hidden calculations
         # Note:
-        # one-hot encoded input means only kth row of w0 
+        # one-hot encoded input means only kth row of w0
         # will be updated with non-zero deltas, since input xk is coeficient.
 
         # b/c of one-hot input this happens to be a row vector
         delta_weights0 = a0 * (1 - a0) *  w0_error * 1
 
-        return delta_weights0, delta_weights1
+        return (inword_id, delta_weights0), delta_weights1
+    ##
+    def updateWeights(self, deltas0, deltas1):
+        '''
+        Inputs
+        ------
+        deltas0: 
+        A tuple, (index, delta_vector) index of w0 row to be updated and deltas
+        
+        deltas1:
+        Dictionary, keys are tuples corresponding to entry i,j of w1 to be updated.
+        Values are the deltas at index i,j
+        
+        '''
+        # Update w0 
+        row_index, deltas0 = deltas0
+        self.w0[row_index] -= self.lr * deltas0
+
+        # Update w1
+        for key in deltas1:
+            i,j = key
+
+            self.w1[i][j] -= self.lr * deltas1[key]
+
+    ##
+    def word2vec(self, in_word_id):
+
+        return self.w0[in_word_id]
         
 
 
-# In[10]:
+# In[ ]:
 
 
-testN = littleNN(words, 300, 5)
+def trainNN(word_id_counts, epochs, batch_size):
+
+    # Hyperparams
+    embedding_dim = 400
+    neg_sample_size = 15
+    learning_rate = 0.5
+    moreData = iterData(settings["data_path"], batch_size)
+    # word2vec specific
+    radius = 4      # sample window radius
+    repeat_num = 3  # number of times to sample each word
+    
+    #
+    net = littleNN(word_id_counts, embedding_dim, neg_sample_size, learning_rate)
+    
+    #
+    for e in range(epochs):
+        
+        batch = next(moreData)
+        words, targets = inputsTargets(batch)
+
+        for nth, word in enumerate(words):
+            
+            word_id, target_id  = word2int.get(word,None), word2int.get(targets[nth], None)
+
+            if not word_id or not target_id:
+                continue
+            
+            a0, softmax_probs = net.forwardPass(word_id)
+            d0, d1 = net.sampledBackProp(word_id, a0, softmax_probs, target_id)
+            net.updateWeights(d0,d1)
+
+
+## Run training             
+word_id_counts = Counter( { word2int[w] : words[w] for w in words } )
+
+trainNN(word_id_counts, 5, 10000)
+
+
+# In[18]:
+
+
+
+
+testN = littleNN(word_id_counts, 300, 5, )
 
 word_id = word2int['weather']
 targ_id = word2int['wind']
 
 a0, sfm = testN.forwardPass(word_id)
 d0,d1 = testN.sampledBackProp(word_id, a0, sfm, targ_id)
+testN.updateWeights(d0,d1)
 
 
 # In[5]:
