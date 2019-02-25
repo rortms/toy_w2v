@@ -1,16 +1,18 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[5]:
 
 
+import random
+import time
 import numpy as np
 import pandas as pd
 from collections import Counter
 import itertools as itt
 
 
-# In[2]:
+# In[6]:
 
 
 # Infinite data iterator
@@ -44,7 +46,7 @@ def iterData(filename, batch_size, jump_around=False):
         
 
 
-# In[3]:
+# In[7]:
 
 
 # Test infinite iterator
@@ -59,7 +61,7 @@ testIter = iterData(fn, 5)
 print(list( (" ".join(next(testIter)) for k in range(100)) ) )
 
 
-# In[4]:
+# In[8]:
 
 
 ## Initialize file iterator
@@ -68,7 +70,7 @@ from config import settings
 moreData = iterData(settings["data_path"], 1000)
 
 
-# In[5]:
+# In[9]:
 
 
 # Construct vocabulary set
@@ -76,12 +78,11 @@ words = Counter(next(moreData))
 print(len(words))
 for k in range(70000):
     words.update(next(moreData))
-    if k % 3000 == 0:
-        print(len(words))
+print(len(words))
         
 
 
-# In[6]:
+# In[10]:
 
 
 # Subsampling with word2vec's subsampling function
@@ -108,11 +109,11 @@ int2word = { i : word for word, i in word2int.items() }
 print(len(words))
 
 
-# In[8]:
+# In[11]:
 
 
-# Skip-gram model: for each word, sample a surrounding word within a fixed window (excluding itself),
-# (Forgot actual terminology) each word is processed in this way k times generating k training targets for it.
+# Skip-gram model: for each word, sample a surrounding word within a fixed window (skip-window) excluding itself,
+#  each word is processed in this way k times (skip number) generating k training targets for it. 
 #
 
 def inputsTargets(word_sequence, radius = 4, repeat_num = 2):
@@ -137,7 +138,7 @@ def inputsTargets(word_sequence, radius = 4, repeat_num = 2):
     return words, targets
 
 
-# In[17]:
+# In[81]:
 
 
 class littleNN(object):
@@ -150,11 +151,22 @@ class littleNN(object):
         
         ## Network parameters
         self.embedding_dim = embedding_dim
-        self.neg_sample_size = neg_sample_size        
+        self.neg_sample_size = neg_sample_size
         
         # layers
-        self.w0 = np.random.uniform( size=(self.vocab_size, embedding_dim ) )
-        self.w1 = np.random.uniform( size=(embedding_dim, self.vocab_size) )
+        self.w0 = np.random.normal(0, self.vocab_size**-0.5, (self.vocab_size, embedding_dim ) )
+        self.b0 = np.zeros(embedding_dim)
+        
+        # self.w0 = np.zeros( (self.vocab_size, embedding_dim ) )                        
+        # self.b0 = np.random.normal(0, self.vocab_size**-0.5,  embedding_dim  )
+        
+        self.w1 = np.random.normal(0, self.vocab_size**-0.5, (embedding_dim, self.vocab_size) )
+        self.b1 = np.zeros(self.vocab_size)
+        
+        # self.w0 = np.random.uniform(low=-init_range, high=init_range, size=(self.vocab_size, embedding_dim ) )
+        # self.w1 = np.random.uniform(low=-init_range, high=init_range, size=(embedding_dim, self.vocab_size) )
+        # self.w0 = np.zeros( (self.vocab_size, embedding_dim ) )
+        # self.w1 = np.zeros( (embedding_dim, self.vocab_size) )
         
         # sigmoid activation
         self.sgmd = lambda x: 1 / ( 1 + np.exp(-x))
@@ -183,15 +195,20 @@ class littleNN(object):
 
         return neg_samples
 
+    
+    def crossEntropy(self, softmax_ps, target_id):
+        
+        return -np.log(softmax_ps[target_id])
+    
     # Forward pass
     def forwardPass(self, inword_id):
 
         # Input to hidden is just a lookup (b/c of one hot word encoding)
-        z0 = self.w0[inword_id]
-        a0 = self.sgmd(z0)
+        z0 = self.w0[inword_id] + self.b0
+        a0 =  z0 #self.sgmd(z0)
 
         # Hidden to output
-        z1 = np.dot(a0, self.w1)
+        z1 = np.dot(a0, self.w1) + self.b1
         softmax_ps = self.Softmax(z1)
 
         return a0, softmax_ps
@@ -215,7 +232,7 @@ class littleNN(object):
             for idx in sampled_targets:
                 
                 out_err_at_idx = softmax_out[idx] - sampled_targets[idx]
-                
+
                 ###############################################
                 # 'Local' gradient for softmax node
                 if kth == idx:
@@ -223,11 +240,14 @@ class littleNN(object):
                 else:
                     softmax_derivative = - softmax_out[idx] * softmax_out[kth]
                 ###############################################
-                
-                delta_weights1[ (kth,idx) ] = a0[kth] * softmax_derivative * out_err_at_idx
 
+                if kth == idx:
+                    delta_weights1[ (kth,idx) ] = a0[kth] * (softmax_out[idx] - 1)#* softmax_derivative * out_err_at_idx
+                else:
+                    delta_weights1[ (kth,idx) ] = 0
+                    
                 # Dot transpose of w1
-                sm += row[idx] * softmax_derivative * out_err_at_idx
+                sm += row[idx] * (softmax_out[idx] - 1) # * softmax_derivative * out_err_at_idx
 
             w0_error[kth] = sm
 
@@ -237,7 +257,7 @@ class littleNN(object):
         # will be updated with non-zero deltas, since input xk is coeficient.
 
         # b/c of one-hot input this happens to be a row vector
-        delta_weights0 = a0 * (1 - a0) *  w0_error * 1
+        delta_weights0 = w0_error * 1 #* a0 * (1 - a0) 
 
         return (inword_id, delta_weights0), delta_weights1
     ##
@@ -253,15 +273,21 @@ class littleNN(object):
         Values are the deltas at index i,j
         
         '''
-        # Update w0 
-        row_index, deltas0 = deltas0
-        self.w0[row_index] -= self.lr * deltas0
 
         # Update w1
         for key in deltas1:
             i,j = key
 
             self.w1[i][j] -= self.lr * deltas1[key]
+
+            # update b1
+            self.b1[j] -= deltas1[key]
+            
+        # Update w0 
+        row_index, deltas0 = deltas0
+        self.w0[row_index] -= self.lr * deltas0
+        #update b0
+        self.b0 -= deltas0
 
     ##
     def word2vec(self, in_word_id):
@@ -270,29 +296,75 @@ class littleNN(object):
         
 
 
-# In[ ]:
+# In[82]:
 
 
-def trainNN(word_id_counts, epochs, batch_size):
+def unit(v):
+    return v / np.sqrt(np.dot(v,v))
 
+def cosineDistance(v,w):
+    return np.dot( unit(v), unit(w) )
+
+
+# In[83]:
+
+
+def trainNN(word_id_counts):
+
+    # Training Params
+    epochs = 30
+    batch_size = 1000
+    
     # Hyperparams
-    embedding_dim = 400
-    neg_sample_size = 15
-    learning_rate = 0.5
-    moreData = iterData(settings["data_path"], batch_size)
-    # word2vec specific
-    radius = 4      # sample window radius
+    embedding_dim = 128
+    neg_sample_size = 64
+    learning_rate = 1
+    momentum = 0.5
+
+    # word2vec and validation
+    radius = 2      # sample window radius
     repeat_num = 3  # number of times to sample each word
+    head_subset_size = 100 # sample only from head of distribution for monitoring progress
+    validation_sample_size = 6
     
-    #
+    # Data iterator
+    moreData = iterData(settings["data_path"], batch_size) # data iterator
+    
+    # Init NN
     net = littleNN(word_id_counts, embedding_dim, neg_sample_size, learning_rate)
-    
+
+    ###############
+    # Random sample from dictionary to observe closest cosine distances
+    head_of_distribution = [ id_count[0] for id_count in word_id_counts.most_common( head_subset_size )]
+    samp_ids = random.sample(head_of_distribution, validation_sample_size)
+    pS = pd.Series([w_id for w_id in word_id_counts.keys() if w_id not in samp_ids])
+        
+    ##############
     #
+    initw = net.w0
+    initb = net.b0
     for e in range(epochs):
         
-        batch = next(moreData)
-        words, targets = inputsTargets(batch)
+        # for v in [net.word2vec(i) for i in samp_ids]:
+        #     print(v)
+        # print("-------------------\n")
+        
 
+        
+        # ## View sampled words' neighbors every epoch
+        # for samp_id in samp_ids:
+        #     neighbor_ids = pS.apply( lambda w_id: cosineDistance(net.word2vec(samp_id), net.word2vec(w_id)) ).nlargest(6).index.values
+        #     print("Words close to {}: {}".format(int2word[samp_id], [int2word[i] for i in neighbor_ids] ) )
+        # print("------------\n")
+        
+
+        
+        ## Train ##
+        
+        batch = next(moreData)
+        words, targets = inputsTargets(batch, radius=radius, repeat_num=repeat_num ) 
+        average_cost = 0
+        
         for nth, word in enumerate(words):
             
             word_id, target_id  = word2int.get(word,None), word2int.get(targets[nth], None)
@@ -301,19 +373,38 @@ def trainNN(word_id_counts, epochs, batch_size):
                 continue
             
             a0, softmax_probs = net.forwardPass(word_id)
+            # print (np.mean(softmax_probs))
             d0, d1 = net.sampledBackProp(word_id, a0, softmax_probs, target_id)
             net.updateWeights(d0,d1)
 
+            # 
+            ce = net.crossEntropy(softmax_probs, target_id)
+            if ce:
+                average_cost += ce
 
-## Run training             
+        #
+        
+        print( sum ( sum( abs(np.abs(net.w0) - initw) ) ) ) 
+        
+        print(sum(abs(abs(net.b0) - initb)))
+        
+        print(average_cost / len(words))
+
+            
+## Run training
 word_id_counts = Counter( { word2int[w] : words[w] for w in words } )
 
-trainNN(word_id_counts, 5, 10000)
+trainNN(word_id_counts)
+
+
+# In[ ]:
+
+
+pS = pd.Series(np.array([1,2,3,4,5,74,7,78]))
+pS.apply(lambda x: 1/x).nsmallest(3).index.values
 
 
 # In[18]:
-
-
 
 
 testN = littleNN(word_id_counts, 300, 5, )
