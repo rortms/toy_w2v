@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[2]:
+# In[1]:
 
 
 import numpy as np
@@ -10,7 +10,7 @@ from collections import Counter
 import itertools as itt
 
 
-# In[3]:
+# In[2]:
 
 
 # Infinite data iterator
@@ -44,7 +44,7 @@ def iterData(filename, batch_size, jump_around=False):
         
 
 
-# In[4]:
+# In[3]:
 
 
 # Test infinite iterator
@@ -59,7 +59,7 @@ testIter = iterData(fn, 5)
 print(list( (" ".join(next(testIter)) for k in range(100)) ) )
 
 
-# In[5]:
+# In[4]:
 
 
 ## Initialize file iterator
@@ -68,7 +68,7 @@ from config import settings
 moreData = iterData(settings["data_path"], 1000)
 
 
-# In[6]:
+# In[5]:
 
 
 # Construct vocabulary set
@@ -81,7 +81,7 @@ for k in range(70000):
         
 
 
-# In[7]:
+# In[6]:
 
 
 # Subsampling with word2vec's subsampling function
@@ -103,7 +103,7 @@ words = Counter({ w : int( (count/m)**0.75 )  for w, count in words.most_common(
 print(len(words))
 
 
-# In[8]:
+# In[7]:
 
 
 # Word to id mappings
@@ -111,7 +111,7 @@ word2int = { tup[0] : i for i, tup in enumerate(words.most_common()) }
 int2word = { i : word for word, i in word2int.items() }
 
 
-# In[9]:
+# In[8]:
 
 
 # Skip-gram model: for each word, sample a surrounding word within a fixed window (excluding itself),
@@ -140,7 +140,7 @@ def inputsTargets(word_sequence, radius = 4, repeat_num = 2):
     return words, targets
 
 
-# In[28]:
+# In[9]:
 
 
 class littleNN(object):
@@ -154,21 +154,22 @@ class littleNN(object):
         ## Network parameters
         self.embedding_dim = embedding_dim
         self.neg_sample_size = neg_sample_size
+        
         # layers
-        self.input2hidden = np.random.uniform( size=(self.vocab_size, embedding_dim ) )
-        self.hidden2output = np.random.uniform( size=(embedding_dim, self.vocab_size) )
+        self.w0 = np.random.uniform( size=(self.vocab_size, embedding_dim ) )
+        self.w1 = np.random.uniform( size=(embedding_dim, self.vocab_size) )
         
         # sigmoid activation
         self.sgmd = lambda x: 1 / ( 1 + np.exp(-x))
         
     # Softmax
-    def Softmax(self, w):
+    def Softmax(self, v):
 
         # Numerical stability, (avoiding large number overflow)
-        C = max(w)
+        C = max(v)
 
-        expW = np.exp(w-C)
-        return expW / sum(expW)
+        expV = np.exp(v-C)
+        return expV / sum(expV)
     
     # Negative sampling
     def negSample(self):
@@ -188,33 +189,77 @@ class littleNN(object):
     def forwardPass(self, inword_id):
 
         # Input to hidden is just a lookup (b/c of one hot word encoding)
-        i_2_h = self.input2hidden[inword_id]
-        a = self.sgmd(i_2_h)
+        z0 = self.w0[inword_id]
+        a0 = self.sgmd(z0)
 
         # Hidden to output
-        h_2_o = np.dot(a , self.hidden2output)
-        softmax_ps = self.Softmax(h_2_o)
+        z1 = np.dot(a0, self.w1)
+        softmax_ps = self.Softmax(z1)
 
-        return softmax_ps
+        return a0, softmax_ps
 
     # Sampled back-prop
-    def sampledBackProp(self, target_id):
-        pass
-    
+    def sampledBackProp(self, inword_id, a0, softmax_out, target_id):
+
+        sampled_targets = self.negSample()
+        sampled_targets[target_id] = 1 # one-hot for target is 1
+
+
+        ## Sampled backprop ##
+
+        # Hidden to output calculations
+        w0_error = np.zeros(self.embedding_dim)
+        delta_weights1= {} # dictionary lookup to update only affected terms
+        
+        for kth, row in enumerate(self.w1):
+
+            sm = 0
+            for idx in sampled_targets:
+                
+                out_err_at_idx = softmax_out[idx] - sampled_targets[idx]
+                
+                ###############################################
+                # 'Local' gradient for softmax node
+                if kth == idx:
+                    softmax_derivative = softmax_out[idx] * (1 - softmax_out[idx] )
+                else:
+                    softmax_derivative = - softmax_out[idx] * softmax_out[kth]
+                ###############################################
+                
+                delta_weights1[ (kth,idx) ] = a0[kth] * softmax_derivative * out_err_at_idx
+
+                # Dot transpose of w1
+                sm += row[idx] * softmax_derivative * out_err_at_idx
+
+            w0_error[kth] = sm
+
+        ## Input to hidden calculations
+        # Note:
+        # one-hot encoded input means only kth row of w0 
+        # will be updated with non-zero deltas, since input xk is coeficient.
+
+        # b/c of one-hot input this happens to be a row vector
+        delta_weights0 = a0 * (1 - a0) *  w0_error * 1
+
+        return delta_weights0, delta_weights1
         
 
 
-# In[29]:
+# In[10]:
 
 
 testN = littleNN(words, 300, 5)
-print(testN.forwardPass(word2int['weather']))
-testN.negSample()
+
+word_id = word2int['weather']
+targ_id = word2int['wind']
+
+a0, sfm = testN.forwardPass(word_id)
+d0,d1 = testN.sampledBackProp(word_id, a0, sfm, targ_id)
 
 
-# In[9]:
+# In[5]:
 
 
 t = np.array([1,2,3,4,5,74,7,78])
-t[[0,5,3]]
+t * (1 - t)
 
