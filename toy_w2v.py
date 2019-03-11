@@ -164,7 +164,7 @@ def makeInputsTargets(word_sequence, radius = 4, repeat_num = 2):
     return words, targets
 
 
-# In[11]:
+# In[23]:
 
 
 class littleNN(object):
@@ -262,7 +262,7 @@ class littleNN(object):
         z1 = z1[np.arange(N)[:,None], sample_indices] # See explanatory ex2 below
         out = self.sgmd(z1)
 
-        n = z1.shape[0] # "binary" classification occurs along sample size, not batch size
+        n = z1.shape[1] # "binary" classification occurs along sample size, not batch size
         # Sigmoid error
         out_d = -out / n
         out_d[:, -1] += 1 / n  # i.e err = (y - sgmd(z1)) where y = 0,1
@@ -375,19 +375,19 @@ class littleNN(object):
     #     return result    
 
 
-# In[12]:
+# In[24]:
 
 
 np.array([[1,2,4],[1,1,1]]) *  np.array([[1,0,1],[0,0,2]])
 
 
-# In[13]:
+# In[25]:
 
 
 csr_matrix(2*np.random.randint(0,2, (6,4)).T) @ (4*np.eye(6))
 
 
-# In[14]:
+# In[26]:
 
 
 ##################
@@ -410,7 +410,7 @@ def getNegSample(target, N=20):
 np.apply_along_axis(getNegSample, 1, tars[:,None])               
 
 
-# In[15]:
+# In[27]:
 
 
 ######################
@@ -426,7 +426,7 @@ select_ints = ints[np.arange(l)[:,None],indices]
 print(select_ints)
 
 
-# In[16]:
+# In[28]:
 
 
 ###################
@@ -444,13 +444,13 @@ csr = csr_matrix( (data, (rows, columns)), shape=(7,8))
 print(csr.toarray())
 
 
-# In[17]:
+# In[29]:
 
 
 help(csr_matrix.dot)
 
 
-# In[18]:
+# In[30]:
 
 
 def cosineDistance(v,w):
@@ -463,7 +463,7 @@ def cosineDistance(v,w):
     return np.dot( unit(v), unit(w) )
 
 
-# In[22]:
+# In[ ]:
 
 
 # Training Params
