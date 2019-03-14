@@ -31,7 +31,7 @@ def iterData(filename, batch_size, jump_around=False):
             while True:
                 
                 if jump_around:
-                    offset = np.random.randint(1,4) * batch_size
+                    offset = np.random.randint(1,4) * batch_size // 3
                     
                 yield datfile.read(batch_size)
                 position = datfile.seek(position + offset)
@@ -73,39 +73,35 @@ from config import settings
 moreData = iterData(settings["data_path"], 1000)
 
 
-# In[5]:
-
-
-# Construct vocabulary set
-words = Counter(next(moreData))
-print(len(words))
-for k in range(70000):
-    words.update(next(moreData))
-print(len(words))
-        
-
-
 # In[6]:
 
 
-# # Vocab
-# with open(settings["word_filter"], 'r') as fw:
-#     filter_words = fw.read()
-    
-# with open(settings["data_path"], 'r') as wordfile:
-#     words = wordfile.read()
-
-# filter_words = Counter(filter_words.split())
-# words = Counter( [ w for w in words.split() if filter_words.get(w, None) is None] )
+# Construct vocabulary set
+all_words = Counter(next(moreData))
+print(len(all_words))
+for k in range(70000):
+    all_words.update(next(moreData))
+print(len(all_words))
+        
 
 
 # In[7]:
 
 
-print(len(words))
+words = Counter( { w[0] : w[1] for w in all_words.most_common(int(80e3)) } )
+words['UNKN'] = 0
+for w in all_words:
+    if words.get(w, None) is None:
+        words['UNKN'] += 1
 
 
 # In[8]:
+
+
+print(len(words))
+
+
+# In[9]:
 
 
 # Subsampling with word2vec's subsampling function
@@ -136,9 +132,9 @@ print(len(words))
 # In[10]:
 
 
-###################
+######################################
 # Skip-gram model: for each word, sample a surrounding word within a fixed window (skip-window) excluding itself,
-# each word is processed in this way k times (skip number) generating k training targets for it. 
+# each word is processed in this way k times (skip number) generating k training targets for it.
 #
 
 def makeInputsTargets(word_sequence, radius = 4, repeat_num = 2):
@@ -164,7 +160,7 @@ def makeInputsTargets(word_sequence, radius = 4, repeat_num = 2):
     return words, targets
 
 
-# In[23]:
+# In[11]:
 
 
 class littleNN(object):
@@ -238,18 +234,6 @@ class littleNN(object):
         # Hidden to output
         z1 = a0 @ self.w1 + self.b1
         return a0, z1
-
-    # def forwardPass(self, Xbatch):
-        
-    #     # Input to hidden is just a lookup (b/c of one hot word encoding)
-    #     # z0 = np.array( [self.w0[word_id] + self.b0 for word_id in inBatch] )
-    #     z0 = self.w0[Xbatch] + self.b0
-    #     a0 = np.maximum(0, z0) # ReLu activation
-
-    #     # Hidden to output
-    #     z1 = np.dot(a0, self.u) + self.b
-
-    #     return a0, z1 
     
     #
     def sampledBackProp(self, a0, z1, Xbatch, target_batch):
@@ -344,7 +328,6 @@ class littleNN(object):
             
         self.b0 += -self.lr * b0_d
     
-
     #
     def crossEntropy(self, out, target_ids):
 
@@ -355,39 +338,20 @@ class littleNN(object):
     def word2vec(self, in_word_id):
         return self.w0[in_word_id]
 
-    # #
-    # def getNegSample(self, target):
 
-    #     target = target[0]
-    #     result = np.zeros(self.neg_sample_size+1, dtype=np.int32)
-
-    #     # Target splits vocab range in two, pick sample from larger
-    #     # excluding the target
-    #     if target < (self.vocab_size-1) / 2:
-
-    #         samp = random.sample(range(target+1, self.vocab_size), self.neg_sample_size)
-    #     else:
-    #         samp = random.sample(range(0, target-1), self.neg_sample_size)
-
-    #     result[:len(samp)] += samp # fill result array
-    #     result[-1] = target # add target (assures target exists exactly once)
-
-    #     return result    
-
-
-# In[24]:
+# In[12]:
 
 
 np.array([[1,2,4],[1,1,1]]) *  np.array([[1,0,1],[0,0,2]])
 
 
-# In[25]:
+# In[13]:
 
 
 csr_matrix(2*np.random.randint(0,2, (6,4)).T) @ (4*np.eye(6))
 
 
-# In[26]:
+# In[15]:
 
 
 ##################
@@ -407,10 +371,10 @@ def getNegSample(target, N=20):
     return random.sample(range(0, target-1), 4)
 
 # for each target apply getNegSample function
-np.apply_along_axis(getNegSample, 1, tars[:,None])               
+np.apply_along_axis(getNegSample, 1, tars[:,None])              
 
 
-# In[27]:
+# In[16]:
 
 
 ######################
@@ -426,7 +390,7 @@ select_ints = ints[np.arange(l)[:,None],indices]
 print(select_ints)
 
 
-# In[28]:
+# In[17]:
 
 
 ###################
@@ -444,13 +408,13 @@ csr = csr_matrix( (data, (rows, columns)), shape=(7,8))
 print(csr.toarray())
 
 
-# In[29]:
+# In[18]:
 
 
 help(csr_matrix.dot)
 
 
-# In[30]:
+# In[19]:
 
 
 def cosineDistance(v,w):
@@ -463,24 +427,26 @@ def cosineDistance(v,w):
     return np.dot( unit(v), unit(w) )
 
 
-# In[ ]:
+# In[20]:
 
 
 # Training Params
 epochs = 1000
 batch_size = 100
-
 # Hyperparams
 embedding_dim = 128
 neg_sample_size = 64 #300
-learning_rate = 0.051
+learning_rate = 0.05
 # momentum = 0.5
 
 # word2vec and validation
-radius = 15#2       # sample window radius
+radius = 4#2       # sample window radius
 repeat_num = 3#2   # number of times to sample each word
 head_subset_size = 100 # sample only from head of distribution for monitoring progress
 validation_sample_size = 6
+
+
+# In[21]:
 
 
 # Init NN
@@ -500,7 +466,12 @@ def trainNN(word_id_counts):
     head_of_distribution = [ id_count[0] for id_count in word_id_counts.most_common( head_subset_size )]
     samp_ids = random.sample(head_of_distribution, validation_sample_size)
     pS = pd.Series([w_id for w_id in word_id_counts.keys() if w_id not in samp_ids])
-        
+
+    def report_closest():
+        for samp_id in samp_ids:
+            neighbor_ids = pS.apply( lambda w_id: cosineDistance(net.word2vec(samp_id), net.word2vec(w_id)) ).nlargest(6).index.values
+            print("Words close to {}: {}".format(int2word[samp_id], [int2word[i] for i in neighbor_ids] ) )
+        print("------------\n")        
     ##############
     #
     prev_loss = 1000
@@ -514,16 +485,12 @@ def trainNN(word_id_counts):
         
         ## View sampled words' neighbors every epoch
         if e % 200 == 0:
-            for samp_id in samp_ids:
-                neighbor_ids = pS.apply( lambda w_id: cosineDistance(net.word2vec(samp_id), net.word2vec(w_id)) ).nlargest(6).index.values
-                print("Words close to {}: {}".format(int2word[samp_id], [int2word[i] for i in neighbor_ids] ) )
-            print("------------\n")
+            report_closest()
         
-
         ## Train ##
         
         batch = next(moreData)
-        batch = [ word2int[word] for word in batch if word2int.get(word,None) is not None ]
+        batch = [ word2int[word] if word2int.get(word,None) is not None else word2int['UNKN'] for word in batch  ]
         
         word_id_batch, target_batch = makeInputsTargets(batch, radius=radius, repeat_num=repeat_num )
 
@@ -535,6 +502,7 @@ def trainNN(word_id_counts):
             print("Loss: ", loss)
             if loss - prev_loss > 2:
                 print("Seems to be diverging")
+                report_closest()
                 break
             if loss - prev_loss > 0.1:
                 net.lr *= 0.1
@@ -542,11 +510,86 @@ def trainNN(word_id_counts):
             
         
         net.sampledBackProp(a0, z1, word_id_batch, target_batch)
-
         
+    report_closest()
+    
 ## Run training
 
 trainNN(word_id_counts)
+
+
+# In[22]:
+
+
+import tensorflow as tf
+tf.reset_default_graph()
+
+# Training Params
+epochs = 1000
+batch_size = 1000
+# Hyperparams
+embedding_dim = 128
+neg_sample_size = 64 #300
+learning_rate = 0.05
+
+# word2vec and validation
+radius = 6#2       # sample window radius
+repeat_num = 3#2   # number of times to sample each word
+head_subset_size = 100 # sample only from head of distribution for monitoring progress
+validation_sample_size = 6
+
+
+
+###############
+moreData = iterData(settings["data_path"], batch_size)
+
+# Input
+word_indices = tf.placeholder(tf.int32, [None])
+labels = tf.placeholder(tf.int32, [None, None])
+
+# Embedding
+embedding_layer = tf.get_variable("Embedding_Layer",
+                                  initializer=tf.truncated_normal([len(words), embedding_dim]))
+
+embed_vecs = tf.nn.embedding_lookup(embedding_layer, word_indices)
+
+softmax_out = tf.get_variable("Softmax_Out", 
+                              initializer=tf.truncated_normal([len(words), embedding_dim])) # Order reversed from expected
+
+biases_out = tf.get_variable("Biases_Out",
+                             initializer=tf.zeros(len(words)))
+
+#
+loss = tf.reduce_mean ( tf.nn.sampled_softmax_loss( softmax_out,
+                                                    biases_out,
+                                                    labels,
+                                                    embed_vecs,
+                                                    neg_sample_size,
+                                                    len(words) ) )
+#
+optimizer = tf.train.AdagradOptimizer(0.1).minimize(loss)
+
+with tf.Session() as sesh:
+    
+    sesh.run(tf.global_variables_initializer())
+
+    for i in range(10000):
+        batch = next(moreData)
+        batch = [ word2int[word] if word2int.get(word,None) is not None else word2int['UNKN'] for word in batch  ]        
+        word_ids, label_ids = makeInputsTargets(batch, radius, repeat_num)
+
+        d = { word_indices : word_ids, labels : np.array(label_ids)[:,None] }
+        
+        _, l = sesh.run([optimizer, loss],  feed_dict=d)
+        
+        if i % 500 == 0:
+            print(l)
+
+
+# In[ ]:
+
+
+help(tf.nn.sampled_softmax_loss)
 
 
 # In[ ]:
@@ -559,12 +602,6 @@ neighbor_ids = pS.apply( lambda w_id: cosineDistance(net.word2vec(samp_id), net.
 
 print("Words close to {}: {}".format(int2word[samp_id], [int2word[i] for i in neighbor_ids] ) )
 print("------------\n")
-
-
-# In[ ]:
-
-
-a = np.random.randint(0,10, (1,10))
 
 
 # In[ ]:
